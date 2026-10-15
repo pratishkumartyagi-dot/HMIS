@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TaskDeck</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <h1>TaskDeck</h1>
+      <div class="topbar-actions">
+        <button id="importBtn" class="ghost" type="button">Import</button>
+        <button id="exportBtn" class="ghost" type="button">Export</button>
+      </div>
+    </header>
+
+    <form id="addForm" class="add-bar" autocomplete="off">
+      <input id="newTitle" class="grow" type="text" placeholder="Add a task and press Enter" maxlength="240" />
+      <select id="newPriority" title="Priority">
+        <option value="low">Low</option>
+        <option value="normal" selected>Normal</option>
+        <option value="high">High</option>
+      </select>
+      <input id="newDue" type="date" title="Due date" />
+      <button id="addBtn" class="primary" type="submit">Add</button>
+    </form>
+
+    <div class="toolbar">
+      <div class="filters" role="tablist">
+        <button class="filter active" data-filter="all" type="button">All</button>
+        <button class="filter" data-filter="active" type="button">Active</button>
+        <button class="filter" data-filter="completed" type="button">Completed</button>
+      </div>
+      <input id="search" class="search" type="search" placeholder="Search tasks" />
+    </div>
+
+    <ul id="taskList" class="task-list"></ul>
+
+    <div id="emptyState" class="empty" hidden>
+      <p>No tasks yet. Add your first task above.</p>
+    </div>
+
+    <footer class="statusbar">
+      <span id="counts">0 tasks</span>
+      <button id="clearCompleted" class="ghost" type="button">Clear completed</button>
+    </footer>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

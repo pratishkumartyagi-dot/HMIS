@@ -1,0 +1,60 @@
+{
+  "name": "taskdeck",
+  "productName": "TaskDeck",
+  "version": "1.0.0",
+  "description": "A cross-platform desktop task manager built with Electron.",
+  "main": "src/main.js",
+  "author": "TaskDeck",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "gen:icon": "node scripts/gen-icon.js",
+    "build:win": "electron-builder --win --x64",
+    "build:win:portable": "electron-builder --win portable --x64",
+    "build:linux": "electron-builder --linux --x64"
+  },
+  "devDependencies": {
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.taskdeck.app",
+    "productName": "TaskDeck",
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "icon": "build/icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "TaskDeck"
+    },
+    "portable": {
+      "artifactName": "TaskDeck-${version}-portable.exe"
+    }
+  }
+}
