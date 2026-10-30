@@ -1,274 +1,352 @@
 const api = window.taskAPI;
 
-const state = {
-  tasks: [],
-  filter: 'all',
-  search: ''
+let settings = {
+  clientId: '',
+  clientSecret: '',
+  apiRelease: '2026-01',
+  apiLanguage: 'en'
+};
+
+let accessToken = null;
+let tokenExpiry = null;
+
+let currentCase = {
+  id: Date.now().toString(36),
+  patientId: '',
+  encounterId: '',
+  dischargeDate: '',
+  dischargeDisposition: '',
+  attendingPhysician: '',
+  coder: '',
+  principalDiagnosis: null,
+  secondaryDiagnoses: [],
+  createdAt: Date.now(),
+  updatedAt: Date.now()
 };
 
 const els = {
-  form: document.getElementById('addForm'),
-  title: document.getElementById('newTitle'),
-  priority: document.getElementById('newPriority'),
-  due: document.getElementById('newDue'),
-  list: document.getElementById('taskList'),
-  empty: document.getElementById('emptyState'),
-  counts: document.getElementById('counts'),
-  filters: Array.from(document.querySelectorAll('.filter')),
-  search: document.getElementById('search'),
-  clearCompleted: document.getElementById('clearCompleted'),
+  patientId: document.getElementById('patientId'),
+  encounterId: document.getElementById('encounterId'),
+  dischargeDate: document.getElementById('dischargeDate'),
+  dischargeDisposition: document.getElementById('dischargeDisposition'),
+  attendingPhysician: document.getElementById('attendingPhysician'),
+  coder: document.getElementById('coder'),
+  icdSearch: document.getElementById('icdSearch'),
+  linearization: document.getElementById('linearization'),
+  searchBtn: document.getElementById('searchBtn'),
+  searchResults: document.getElementById('searchResults'),
+  principalDiag: document.getElementById('principalDiag'),
+  secondaryDiags: document.getElementById('secondaryDiags'),
+  addSecondaryBtn: document.getElementById('addSecondaryBtn'),
+  saveCaseBtn: document.getElementById('saveCaseBtn'),
+  statusInfo: document.getElementById('statusInfo'),
+  settingsBtn: document.getElementById('settingsBtn'),
+  settingsModal: document.getElementById('settingsModal'),
+  closeSettings: document.getElementById('closeSettings'),
+  saveSettings: document.getElementById('saveSettings'),
+  clientId: document.getElementById('clientId'),
+  clientSecret: document.getElementById('clientSecret'),
+  apiRelease: document.getElementById('apiRelease'),
+  apiLanguage: document.getElementById('apiLanguage'),
   exportBtn: document.getElementById('exportBtn'),
   importBtn: document.getElementById('importBtn')
 };
 
-function uid() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-}
-
-function normalizeTask(raw) {
-  if (!raw || typeof raw !== 'object') return null;
-  const title = typeof raw.title === 'string' ? raw.title.trim() : '';
-  if (!title) return null;
-  return {
-    id: typeof raw.id === 'string' ? raw.id : uid(),
-    title,
-    completed: Boolean(raw.completed),
-    priority: ['low', 'normal', 'high'].includes(raw.priority) ? raw.priority : 'normal',
-    due: typeof raw.due === 'string' ? raw.due : '',
-    createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : Date.now(),
-    completedAt: typeof raw.completedAt === 'number' ? raw.completedAt : null
-  };
-}
-
-function persist() {
-  api.save(state.tasks);
-}
-
-function formatDue(due) {
-  if (!due) return null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const d = new Date(due + 'T00:00:00');
-  if (Number.isNaN(d.getTime())) return null;
-  const overdue = d < today;
-  return { text: d.toLocaleDateString(), overdue };
-}
-
-function visibleTasks() {
-  const q = state.search.trim().toLowerCase();
-  return state.tasks.filter((t) => {
-    if (state.filter === 'active' && t.completed) return false;
-    if (state.filter === 'completed' && !t.completed) return false;
-    if (q && !t.title.toLowerCase().includes(q)) return false;
-    return true;
-  });
-}
-
-function makeButton(label, className, onClick, title) {
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = className;
-  btn.textContent = label;
-  if (title) btn.title = title;
-  btn.addEventListener('click', onClick);
-  return btn;
-}
-
-function renderTask(task) {
-  const li = document.createElement('li');
-  li.className = 'task priority-' + task.priority + (task.completed ? ' completed' : '');
-  li.dataset.id = task.id;
-
-  const checkbox = document.createElement('input');
-  checkbox.type = 'checkbox';
-  checkbox.checked = task.completed;
-  checkbox.title = 'Toggle complete';
-  checkbox.addEventListener('change', () => toggleTask(task.id));
-  li.appendChild(checkbox);
-
-  const main = document.createElement('div');
-  main.className = 'task-main';
-
-  const titleEl = document.createElement('div');
-  titleEl.className = 'task-title';
-  titleEl.textContent = task.title;
-  titleEl.title = 'Double-click to edit';
-  titleEl.addEventListener('dblclick', () => startEdit(task.id, titleEl));
-  main.appendChild(titleEl);
-
-  const due = formatDue(task.due);
-  if (due) {
-    const meta = document.createElement('div');
-    meta.className = 'task-meta';
-    const span = document.createElement('span');
-    span.textContent = (due.overdue && !task.completed ? 'Overdue: ' : 'Due: ') + due.text;
-    if (due.overdue && !task.completed) span.className = 'overdue';
-    meta.appendChild(span);
-    main.appendChild(meta);
+async function loadSettings() {
+  const stored = await api.loadSettings();
+  if (stored) {
+    settings = { ...settings, ...stored };
   }
-
-  li.appendChild(main);
-
-  const actions = document.createElement('div');
-  actions.className = 'task-actions';
-  actions.appendChild(makeButton('Edit', 'icon-btn', () => startEdit(task.id, titleEl), 'Edit'));
-  actions.appendChild(makeButton('Delete', 'icon-btn danger', () => deleteTask(task.id), 'Delete'));
-  li.appendChild(actions);
-
-  return li;
+  els.clientId.value = settings.clientId;
+  els.clientSecret.value = settings.clientSecret;
+  els.apiRelease.value = settings.apiRelease;
+  els.apiLanguage.value = settings.apiLanguage;
 }
 
-function render() {
-  els.list.innerHTML = '';
-  const items = visibleTasks().sort((a, b) => {
-    if (a.completed !== b.completed) return a.completed ? 1 : -1;
-    const rank = { high: 0, normal: 1, low: 2 };
-    if (rank[a.priority] !== rank[b.priority]) return rank[a.priority] - rank[b.priority];
-    if (a.due && b.due && a.due !== b.due) return a.due < b.due ? -1 : 1;
-    if (a.due && !b.due) return -1;
-    if (!a.due && b.due) return 1;
-    return a.createdAt - b.createdAt;
-  });
+async function saveSettingsToStorage() {
+  settings.clientId = els.clientId.value;
+  settings.clientSecret = els.clientSecret.value;
+  settings.apiRelease = els.apiRelease.value;
+  settings.apiLanguage = els.apiLanguage.value;
+  await api.saveSettings(settings);
+  accessToken = null;
+  tokenExpiry = null;
+  updateStatus('Settings saved');
+  els.settingsModal.hidden = true;
+}
 
-  for (const task of items) els.list.appendChild(renderTask(task));
-
-  const total = state.tasks.length;
-  const done = state.tasks.filter((t) => t.completed).length;
-  els.counts.textContent = total === 0
-    ? '0 tasks'
-    : `${total - done} active / ${done} done / ${total} total`;
-
-  const noneVisible = items.length === 0;
-  els.empty.hidden = !noneVisible;
-  if (noneVisible) {
-    els.empty.querySelector('p').textContent =
-      total === 0 ? 'No tasks yet. Add your first task above.' : 'No tasks match this view.';
+async function authenticate() {
+  if (!settings.clientId || !settings.clientSecret) {
+    updateStatus('API credentials required - configure in Settings');
+    return null;
   }
-
-  els.clearCompleted.disabled = done === 0;
-}
-
-function startEdit(id, titleEl) {
-  const task = state.tasks.find((t) => t.id === id);
-  if (!task) return;
-  const input = document.createElement('input');
-  input.type = 'text';
-  input.className = 'task-title-input';
-  input.value = task.title;
-  input.maxLength = 240;
-
-  const commit = () => {
-    const next = input.value.trim();
-    if (next) {
-      task.title = next;
-      persist();
+  if (accessToken && tokenExpiry && Date.now() < tokenExpiry) {
+    return accessToken;
+  }
+  
+  try {
+    updateStatus('Authenticating...');
+    const response = await fetch('https://icdaccessmanagement.who.int/connect/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: new URLSearchParams({
+        grant_type: 'client_credentials',
+        scope: 'icdapi_access',
+        client_id: settings.clientId,
+        client_secret: settings.clientSecret
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Auth failed: ${response.status}`);
     }
-    render();
+    
+    const data = await response.json();
+    accessToken = data.access_token;
+    tokenExpiry = Date.now() + (data.expires_in * 1000) - 60000;
+    updateStatus('Authenticated');
+    return accessToken;
+  } catch (err) {
+    updateStatus(`Auth error: ${err.message}`);
+    return null;
+  }
+}
+
+async function searchICD11() {
+  const query = els.icdSearch.value.trim();
+  if (!query) return;
+  
+  const token = await authenticate();
+  if (!token) return;
+  
+  updateStatus('Searching ICD-11...');
+  els.searchResults.innerHTML = '';
+  els.searchResults.hidden = false;
+  
+  try {
+    const release = settings.apiRelease || '2026-01';
+    const linearization = els.linearization.value;
+    const url = `https://id.who.int/icd/release/11/${release}/${linearization}/search?q=${encodeURIComponent(query)}&useFlexisearch=false&flatResults=true`;
+    
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/json',
+        'Accept-Language': settings.apiLanguage || 'en',
+        'API-Version': 'v2'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Search failed: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    const results = data.destinationEntities || [];
+    
+    if (results.length === 0) {
+      const item = document.createElement('div');
+      item.className = 'search-result-item';
+      item.innerHTML = '<span class="search-result-title">No results found</span>';
+      els.searchResults.appendChild(item);
+    } else {
+      for (const result of results.slice(0, 20)) {
+        const item = document.createElement('div');
+        item.className = 'search-result-item';
+        item.innerHTML = `
+          <span class="search-result-code">${result.theCode || result.code || ''}</span>
+          <span class="search-result-title">${result.title || result.stemId || ''}</span>
+        `;
+        item.addEventListener('click', () => {
+          selectDiagnosis(result);
+          els.searchResults.hidden = true;
+          els.icdSearch.value = '';
+        });
+        els.searchResults.appendChild(item);
+      }
+    }
+    updateStatus(`Found ${results.length} result(s)`);
+  } catch (err) {
+    updateStatus(`Search error: ${err.message}`);
+    const item = document.createElement('div');
+    item.className = 'search-result-item';
+    item.innerHTML = `<span class="search-result-title">Error: ${err.message}</span>`;
+    els.searchResults.appendChild(item);
+  }
+}
+
+let pendingDiagnosisType = 'principal'; // or 'secondary'
+
+function selectDiagnosis(result) {
+  const diagnosis = {
+    id: Date.now().toString(36),
+    code: result.theCode || result.code || '',
+    title: result.title || '',
+    uri: result.id || result.stemId || '',
+    linearization: els.linearization.value
   };
+  
+  if (pendingDiagnosisType === 'principal') {
+    currentCase.principalDiagnosis = diagnosis;
+    renderPrincipalDiagnosis();
+  } else {
+    currentCase.secondaryDiagnoses.push(diagnosis);
+    renderSecondaryDiagnoses();
+  }
+}
 
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') commit();
-    if (e.key === 'Escape') render();
+function renderPrincipalDiagnosis() {
+  els.principalDiag.innerHTML = '';
+  if (!currentCase.principalDiagnosis) {
+    const placeholder = document.createElement('div');
+    placeholder.className = 'diagnosis-placeholder';
+    placeholder.textContent = 'No principal diagnosis assigned';
+    els.principalDiag.appendChild(placeholder);
+    return;
+  }
+  
+  const diag = currentCase.principalDiagnosis;
+  const item = document.createElement('div');
+  item.innerHTML = `
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <div>
+        <span class="diagnosis-code">${diag.code}</span>
+        <span class="diagnosis-title">${diag.title}</span>
+      </div>
+      <button class="ghost" type="button" id="removePrincipal">Remove</button>
+    </div>
+  `;
+  els.principalDiag.appendChild(item);
+  document.getElementById('removePrincipal').addEventListener('click', (e) => {
+    e.stopPropagation();
+    currentCase.principalDiagnosis = null;
+    renderPrincipalDiagnosis();
   });
-  input.addEventListener('blur', commit);
 
-  titleEl.replaceWith(input);
-  input.focus();
-  input.select();
 }
 
-function addTask(title, priority, due) {
-  state.tasks.push({
-    id: uid(),
-    title,
-    completed: false,
-    priority,
-    due: due || '',
-    createdAt: Date.now(),
-    completedAt: null
+function renderSecondaryDiagnoses() {
+  els.secondaryDiags.innerHTML = '';
+  for (let i = 0; i < currentCase.secondaryDiagnoses.length; i++) {
+    const diag = currentCase.secondaryDiagnoses[i];
+    const item = document.createElement('div');
+    item.className = 'diagnosis-item';
+    item.innerHTML = `
+      <div class="diagnosis-info">
+        <span class="diagnosis-code">${diag.code}</span>
+        <span class="diagnosis-title">${diag.title}</span>
+      </div>
+      <div class="diagnosis-actions">
+        <button class="ghost" type="button" data-idx="${i}" data-action="remove">Remove</button>
+      </div>
+    `;
+    els.secondaryDiags.appendChild(item);
+  }
+  
+  els.secondaryDiags.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.dataset.idx);
+      const action = btn.dataset.action;
+      if (action === 'remove') {
+        currentCase.secondaryDiagnoses.splice(idx, 1);
+        renderSecondaryDiagnoses();
+      }
+    });
   });
-  persist();
-  render();
 }
 
-function toggleTask(id) {
-  const task = state.tasks.find((t) => t.id === id);
-  if (!task) return;
-  task.completed = !task.completed;
-  task.completedAt = task.completed ? Date.now() : null;
-  persist();
-  render();
+function updateStatus(msg) {
+  els.statusInfo.textContent = msg;
 }
 
-function deleteTask(id) {
-  state.tasks = state.tasks.filter((t) => t.id !== id);
-  persist();
-  render();
-}
-
-els.form.addEventListener('submit', (e) => {
-  e.preventDefault();
-  const title = els.title.value.trim();
-  if (!title) return;
-  addTask(title, els.priority.value, els.due.value);
-  els.title.value = '';
-  els.due.value = '';
-  els.priority.value = 'normal';
-  els.title.focus();
+els.searchBtn.addEventListener('click', searchICD11);
+els.icdSearch.addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') {
+    searchICD11();
+  }
 });
 
-els.filters.forEach((btn) => {
-  btn.addEventListener('click', () => {
-    state.filter = btn.dataset.filter;
-    els.filters.forEach((b) => b.classList.toggle('active', b === btn));
-    render();
-  });
+els.addSecondaryBtn.addEventListener('click', () => {
+  pendingDiagnosisType = 'secondary';
+  els.icdSearch.focus();
+  updateStatus('Search and select to add secondary diagnosis');
 });
 
-els.search.addEventListener('input', () => {
-  state.search = els.search.value;
-  render();
+els.principalDiag.addEventListener('click', (e) => {
+  if (e.target.id === 'removePrincipal') return;
+  pendingDiagnosisType = 'principal';
+  els.icdSearch.focus();
+  updateStatus('Search and select to set principal diagnosis');
 });
 
-els.clearCompleted.addEventListener('click', () => {
-  const done = state.tasks.filter((t) => t.completed).length;
-  if (done === 0) return;
-  if (!window.confirm(`Remove ${done} completed task${done === 1 ? '' : 's'}?`)) return;
-  state.tasks = state.tasks.filter((t) => !t.completed);
-  persist();
-  render();
+els.saveCaseBtn.addEventListener('click', async () => {
+  currentCase.patientId = els.patientId.value;
+  currentCase.encounterId = els.encounterId.value;
+  currentCase.dischargeDate = els.dischargeDate.value;
+  currentCase.dischargeDisposition = els.dischargeDisposition.value;
+  currentCase.attendingPhysician = els.attendingPhysician.value;
+  currentCase.coder = els.coder.value;
+  currentCase.updatedAt = Date.now();
+  
+  if (!currentCase.patientId && !currentCase.encounterId) {
+    if (!confirm('No patient/encounter ID provided. Save anyway?')) return;
+  }
+  if (!currentCase.principalDiagnosis) {
+    if (!confirm('No principal diagnosis assigned. Save anyway?')) return;
+  }
+  
+  const stored = await api.load();
+  const cases = Array.isArray(stored) ? stored : [];
+  const idx = cases.findIndex(c => c.id === currentCase.id);
+  if (idx >= 0) {
+    cases[idx] = currentCase;
+  } else {
+    cases.push(currentCase);
+  }
+  
+  const res = await api.save(cases);
+  if (res && res.ok) {
+    updateStatus('Case saved');
+    alert('Discharge case saved successfully');
+  } else {
+    updateStatus('Save failed');
+    alert('Save failed: ' + (res?.error || 'Unknown error'));
+  }
 });
+
+els.settingsBtn.addEventListener('click', () => {
+  els.settingsModal.hidden = false;
+});
+
+els.closeSettings.addEventListener('click', () => {
+  els.settingsModal.hidden = true;
+});
+
+els.saveSettings.addEventListener('click', saveSettingsToStorage);
 
 els.exportBtn.addEventListener('click', async () => {
-  const res = await api.exportTasks(state.tasks);
-  if (res && res.ok) window.alert('Exported to:\n' + res.filePath);
-  else if (res && res.error) window.alert('Export failed: ' + res.error);
+  const stored = await api.load();
+  const res = await api.exportCases(stored || []);
+  if (res && res.ok) alert('Exported to:\n' + res.filePath);
+  else if (res && res.error) alert('Export failed: ' + res.error);
 });
 
 els.importBtn.addEventListener('click', async () => {
-  const res = await api.importTasks();
+  const res = await api.importCases();
   if (!res || !res.ok) {
-    if (res && res.error) window.alert('Import failed: ' + res.error);
+    if (res && res.error) alert('Import failed: ' + res.error);
     return;
   }
-  const incoming = res.tasks.map(normalizeTask).filter(Boolean);
-  const existing = new Set(state.tasks.map((t) => t.id));
-  let added = 0;
-  for (const task of incoming) {
-    if (existing.has(task.id)) task.id = uid();
-    state.tasks.push(task);
-    added += 1;
-  }
-  persist();
-  render();
-  window.alert(`Imported ${added} task${added === 1 ? '' : 's'}.`);
+  alert(`Imported ${res.cases.length} case(s).`);
 });
 
 async function init() {
-  const stored = await api.load();
-  state.tasks = Array.isArray(stored) ? stored.map(normalizeTask).filter(Boolean) : [];
-  render();
-  els.title.focus();
+  await loadSettings();
+  renderPrincipalDiagnosis();
+  renderSecondaryDiagnoses();
+  updateStatus('Ready - Configure API settings to search ICD-11');
 }
 
 init();

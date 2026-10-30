@@ -2,53 +2,119 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://id.who.int https://icdaccessmanagement.who.int; style-src 'self' 'unsafe-inline'; script-src 'self'" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>TaskDeck</title>
+  <title>ICD-11 Coder - Discharge Diagnosis Coding</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <div class="app">
     <header class="topbar">
-      <h1>TaskDeck</h1>
+      <h1>ICD-11 Coder</h1>
       <div class="topbar-actions">
-        <button id="importBtn" class="ghost" type="button">Import</button>
+        <button id="settingsBtn" class="ghost" type="button">API Settings</button>
         <button id="exportBtn" class="ghost" type="button">Export</button>
+        <button id="importBtn" class="ghost" type="button">Import</button>
       </div>
     </header>
 
-    <form id="addForm" class="add-bar" autocomplete="off">
-      <input id="newTitle" class="grow" type="text" placeholder="Add a task and press Enter" maxlength="240" />
-      <select id="newPriority" title="Priority">
-        <option value="low">Low</option>
-        <option value="normal" selected>Normal</option>
-        <option value="high">High</option>
-      </select>
-      <input id="newDue" type="date" title="Due date" />
-      <button id="addBtn" class="primary" type="submit">Add</button>
-    </form>
-
-    <div class="toolbar">
-      <div class="filters" role="tablist">
-        <button class="filter active" data-filter="all" type="button">All</button>
-        <button class="filter" data-filter="active" type="button">Active</button>
-        <button class="filter" data-filter="completed" type="button">Completed</button>
+    <section class="discharge-info">
+      <h2>Discharge Information</h2>
+      <div class="form-row">
+        <input id="patientId" type="text" placeholder="Patient ID / MRN" />
+        <input id="encounterId" type="text" placeholder="Encounter/Visit ID" />
+        <input id="dischargeDate" type="date" title="Discharge Date" />
+        <select id="dischargeDisposition">
+          <option value="">Discharge Disposition</option>
+          <option value="home">Home</option>
+          <option value="transfer">Transfer</option>
+          <option value="ama">Against Medical Advice</option>
+          <option value="expired">Expired</option>
+          <option value="other">Other</option>
+        </select>
       </div>
-      <input id="search" class="search" type="search" placeholder="Search tasks" />
-    </div>
+      <div class="form-row">
+        <input id="attendingPhysician" type="text" placeholder="Attending Physician" class="grow" />
+        <input id="coder" type="text" placeholder="Coder" />
+      </div>
+    </section>
 
-    <ul id="taskList" class="task-list"></ul>
+    <section class="diagnosis-coding">
+      <h2>Diagnosis Coding (ICD-11)</h2>
+      
+      <div class="search-section">
+        <div class="search-row">
+          <input id="icdSearch" class="grow" type="text" placeholder="Search ICD-11 terms (e.g., pneumonia, diabetes)" />
+          <select id="linearization">
+            <option value="mms" selected>ICD-11 MMS (Mortality and Morbidity Statistics)</option>
+            <option value="foundation">Foundation Component</option>
+          </select>
+          <button id="searchBtn" class="primary" type="button">Search</button>
+        </div>
+        <div id="searchResults" class="search-results" hidden></div>
+      </div>
 
-    <div id="emptyState" class="empty" hidden>
-      <p>No tasks yet. Add your first task above.</p>
-    </div>
+      <div class="coding-section">
+        <div class="principal-diagnosis">
+          <h3>Principal (Primary) Diagnosis</h3>
+          <div id="principalDiag" class="diagnosis-entry">
+            <div class="diagnosis-placeholder">No principal diagnosis assigned</div>
+          </div>
+        </div>
+
+        <div class="secondary-diagnoses">
+          <h3>Secondary Diagnoses</h3>
+          <div id="secondaryDiags" class="diagnosis-list"></div>
+          <button id="addSecondaryBtn" class="ghost" type="button">+ Add Secondary Diagnosis</button>
+        </div>
+      </div>
+    </section>
 
     <footer class="statusbar">
-      <span id="counts">0 tasks</span>
-      <button id="clearCompleted" class="ghost" type="button">Clear completed</button>
+      <span id="statusInfo">Ready</span>
+      <button id="saveCaseBtn" class="primary" type="button">Save Case</button>
     </footer>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settingsModal" class="modal" hidden>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>ICD-API Settings</h2>
+        <button id="closeSettings" class="ghost" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Client ID</label>
+          <input id="clientId" type="text" placeholder="Enter ICD API Client ID" />
+        </div>
+        <div class="form-group">
+          <label>Client Secret</label>
+          <input id="clientSecret" type="password" placeholder="Enter ICD API Client Secret" />
+        </div>
+        <div class="form-group">
+          <label>API Release</label>
+          <input id="apiRelease" type="text" value="2026-01" placeholder="e.g., 2026-01" />
+        </div>
+        <div class="form-group">
+          <label>Language</label>
+          <select id="apiLanguage">
+            <option value="en" selected>English</option>
+            <option value="fr">French</option>
+            <option value="es">Spanish</option>
+            <option value="ar">Arabic</option>
+            <option value="zh">Chinese</option>
+          </select>
+        </div>
+        <p class="help-text">Get API credentials from <a href="https://icd.who.int/icdapi" target="_blank">icd.who.int/icdapi</a></p>
+      </div>
+      <div class="modal-footer">
+        <button id="saveSettings" class="primary" type="button">Save Settings</button>
+      </div>
+    </div>
   </div>
 
   <script src="renderer.js"></script>
 </body>
 </html>
+
