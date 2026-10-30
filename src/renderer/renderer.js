@@ -24,6 +24,8 @@ let currentCase = {
   updatedAt: Date.now()
 };
 
+let pendingDiagnosisType = 'principal';
+
 const els = {
   patientId: document.getElementById('patientId'),
   encounterId: document.getElementById('encounterId'),
@@ -114,77 +116,109 @@ async function authenticate() {
   }
 }
 
+function displayResults(results) {
+  els.searchResults.innerHTML = '';
+  if (els.searchResults.style) {
+    els.searchResults.style.display = 'block';
+  }
+  if (!results || results.length === 0) {
+    const item = document.createElement('div');
+    item.className = 'search-result-item';
+    item.innerHTML = '<span class="search-result-title">No results found</span>';
+    els.searchResults.appendChild(item);
+    return;
+  }
+  for (const result of results.slice(0, 50)) {
+    const item = document.createElement('div');
+    item.className = 'search-result-item';
+    item.innerHTML = `
+      <span class="search-result-code">${result.theCode || result.code || result.stemId || ''}</span>
+      <span class="search-result-title">${result.title || result.label || ''}</span>
+    `;
+    item.addEventListener('click', () => {
+      selectDiagnosis(result);
+      if (els.searchResults.style) {
+        els.searchResults.style.display = 'none';
+      }
+      els.icdSearch.value = '';
+    });
+    els.searchResults.appendChild(item);
+  }
+}
+
 async function searchICD11() {
   const query = els.icdSearch.value.trim();
   if (!query) return;
   
   const token = await authenticate();
-  if (!token) return;
   
   updateStatus('Searching ICD-11...');
   els.searchResults.innerHTML = '';
-  els.searchResults.hidden = false;
+  if (els.searchResults.style) {
+    els.searchResults.style.display = 'block';
+  }
   
   try {
     const release = settings.apiRelease || '2026-01';
     const linearization = els.linearization.value;
-    const url = `https://id.who.int/icd/release/11/${release}/${linearization}/search?q=${encodeURIComponent(query)}&useFlexisearch=false&flatResults=true`;
     
-    const response = await fetch(url, {
+    if (token) {
+      try {
+        const url = `https://id.who.int/icd/release/11/${release}/${linearization}/search?q=${encodeURIComponent(query)}&useFlexisearch=false&flatResults=true`;
+        const response = await fetch(url, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json',
+            'Accept-Language': settings.apiLanguage || 'en',
+            'API-Version': 'v2'
+          }
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const results = data.destinationEntities || [];
+          displayResults(results);
+          updateStatus(`Found ${results.length} result(s)`);
+          return;
+        }
+      } catch (e) {
+        // fallback
+      }
+    }
+    
+    const url2 = `https://id.who.int/icd/release/11/${release}/${linearization}/search?q=${encodeURIComponent(query)}&flatResults=true`;
+    const response = await fetch(url2, {
       headers: {
-        'Authorization': `Bearer ${token}`,
         'Accept': 'application/json',
         'Accept-Language': settings.apiLanguage || 'en',
         'API-Version': 'v2'
       }
     });
-    
     if (!response.ok) {
       throw new Error(`Search failed: ${response.status}`);
     }
-    
     const data = await response.json();
-    const results = data.destinationEntities || [];
-    
-    if (results.length === 0) {
-      const item = document.createElement('div');
-      item.className = 'search-result-item';
-      item.innerHTML = '<span class="search-result-title">No results found</span>';
-      els.searchResults.appendChild(item);
-    } else {
-      for (const result of results.slice(0, 20)) {
-        const item = document.createElement('div');
-        item.className = 'search-result-item';
-        item.innerHTML = `
-          <span class="search-result-code">${result.theCode || result.code || ''}</span>
-          <span class="search-result-title">${result.title || result.stemId || ''}</span>
-        `;
-        item.addEventListener('click', () => {
-          selectDiagnosis(result);
-          els.searchResults.hidden = true;
-          els.icdSearch.value = '';
-        });
-        els.searchResults.appendChild(item);
-      }
-    }
+    const results = data.destinationEntities || data.results || data.match || [];
+    displayResults(results);
     updateStatus(`Found ${results.length} result(s)`);
   } catch (err) {
     updateStatus(`Search error: ${err.message}`);
+    els.searchResults.innerHTML = '';
     const item = document.createElement('div');
     item.className = 'search-result-item';
     item.innerHTML = `<span class="search-result-title">Error: ${err.message}</span>`;
     els.searchResults.appendChild(item);
+    if (els.searchResults.style) {
+      els.searchResults.style.display = 'block';
+    }
   }
 }
-
-let pendingDiagnosisType = 'principal'; // or 'secondary'
 
 function selectDiagnosis(result) {
   const diagnosis = {
     id: Date.now().toString(36),
-    code: result.theCode || result.code || '',
-    title: result.title || '',
-    uri: result.id || result.stemId || '',
+    code: result.theCode || result.code || result.stemId || '',
+    title: result.title || result.label || '',
+    uri: result.id || result.stemId || result.uri || '',
     linearization: els.linearization.value
   };
   
@@ -224,7 +258,6 @@ function renderPrincipalDiagnosis() {
     currentCase.principalDiagnosis = null;
     renderPrincipalDiagnosis();
   });
-
 }
 
 function renderSecondaryDiagnoses() {
@@ -258,12 +291,18 @@ function renderSecondaryDiagnoses() {
 }
 
 function updateStatus(msg) {
-  els.statusInfo.textContent = msg;
+  if (els.statusInfo) {
+    els.statusInfo.textContent = msg;
+  }
 }
 
-els.searchBtn.addEventListener('click', searchICD11);
-els.icdSearch.addEventListener('keypress', (e) => {
+els.searchBtn.addEventListener('click', (e) => {
+  e.preventDefault();
+  searchICD11();
+});
+els.icdSearch.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
+    e.preventDefault();
     searchICD11();
   }
 });
@@ -272,6 +311,9 @@ els.addSecondaryBtn.addEventListener('click', () => {
   pendingDiagnosisType = 'secondary';
   els.icdSearch.focus();
   updateStatus('Search and select to add secondary diagnosis');
+  if (els.searchResults && els.searchResults.style) {
+    els.searchResults.style.display = 'block';
+  }
 });
 
 els.principalDiag.addEventListener('click', (e) => {
@@ -279,6 +321,9 @@ els.principalDiag.addEventListener('click', (e) => {
   pendingDiagnosisType = 'principal';
   els.icdSearch.focus();
   updateStatus('Search and select to set principal diagnosis');
+  if (els.searchResults && els.searchResults.style) {
+    els.searchResults.style.display = 'block';
+  }
 });
 
 els.saveCaseBtn.addEventListener('click', async () => {
@@ -317,11 +362,15 @@ els.saveCaseBtn.addEventListener('click', async () => {
 });
 
 els.settingsBtn.addEventListener('click', () => {
-  els.settingsModal.hidden = false;
+  if (els.settingsModal) {
+    els.settingsModal.hidden = false;
+  }
 });
 
 els.closeSettings.addEventListener('click', () => {
-  els.settingsModal.hidden = true;
+  if (els.settingsModal) {
+    els.settingsModal.hidden = true;
+  }
 });
 
 els.saveSettings.addEventListener('click', saveSettingsToStorage);
@@ -339,14 +388,14 @@ els.importBtn.addEventListener('click', async () => {
     if (res && res.error) alert('Import failed: ' + res.error);
     return;
   }
-  alert(`Imported ${res.cases.length} case(s).`);
+  alert(`Imported ${res.cases ? res.cases.length : 0} case(s).`);
 });
 
 async function init() {
   await loadSettings();
   renderPrincipalDiagnosis();
   renderSecondaryDiagnoses();
-  updateStatus('Ready - Configure API settings to search ICD-11');
+  updateStatus('Ready - Search for ICD-11 diagnoses. Configure API settings for authenticated access.');
 }
 
 init();

@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://id.who.int https://icdaccessmanagement.who.int; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://id.who.int https://icdaccessmanagement.who.int data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' https://id.who.int https://icdaccessmanagement.who.int" />
+
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ICD-11 Coder - Discharge Diagnosis Coding</title>
   <link rel="stylesheet" href="styles.css" />
@@ -49,10 +50,12 @@
             <option value="mms" selected>ICD-11 MMS (Mortality and Morbidity Statistics)</option>
             <option value="foundation">Foundation Component</option>
           </select>
-          <button id="searchBtn" class="primary" type="button">Search</button>
-        </div>
-        <div id="searchResults" class="search-results" hidden></div>
+        <button id="searchBtn" class="primary" type="button">Search</button>
       </div>
+      <div id="searchResults" class="search-results" style="display:none;"></div>
+    </div>
+
+
 
       <div class="coding-section">
         <div class="principal-diagnosis">
