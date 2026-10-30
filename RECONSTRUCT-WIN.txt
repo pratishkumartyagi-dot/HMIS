@@ -1,0 +1,1 @@
+cat ICD11Coder.exe.part* > ICD11Coder.exe
